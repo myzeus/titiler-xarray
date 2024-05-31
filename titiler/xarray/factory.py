@@ -245,7 +245,7 @@ class ZarrTilerFactory(BaseTilerFactory):
             ) as src_dst:
 
                 image = src_dst.tile(
-                    x, y, z, tilesize=scale * 256, nodata=src_dst.input.rio.nodata
+                    x, y, z, tilesize=scale * 256, nodata=src_dst.input.rio.nodata, resampling_method="bilinear",
                 )
 
             if post_process:
