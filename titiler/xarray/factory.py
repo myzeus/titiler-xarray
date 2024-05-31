@@ -550,3 +550,19 @@ class ZarrTilerFactory(BaseTilerFactory):
                     },
                     media_type="text/html",
                 )
+
+        @self.router.get("/lst_demo", response_class=HTMLResponse)
+        def lst_demo(request: Request):
+            """Return map Viewer."""
+            templates = Jinja2Templates(
+                directory="",
+                loader=jinja2.ChoiceLoader([jinja2.PackageLoader(__package__, ".")]),
+            )
+
+            return templates.TemplateResponse(
+                name="lst_demo.html",
+                context={
+                    "request": request,
+                },
+                media_type="text/html",
+            )
