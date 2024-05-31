@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Zeus 70m Land Surface Temperature</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+body { margin: 0; padding: 0; }
+#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+</style>
+</head>
+<body>
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" type="text/css">
+
+<style>
+    .map-overlay {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        font-family: 'Inter', Inter, sans-serif;
+        font-size: 14px;
+        line-height: 1.35;
+    }
+
+    .map-overlay .slider-name {
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-top: 0;
+        color: #ebebec;
+        text-shadow:
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000;
+    }
+
+    .map-overlay input {
+        margin: 0;
+        height: 4px;
+        margin-top: 8px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        -ms-appearance: none;
+        appearance: none;
+        border-radius: 9999px;
+        color: inherit;
+        background-color: gray;
+        width: 175px;
+        display: inline-block;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 20px;
+        height: 20px;
+        color: #ebebec;
+        cursor: pointer;
+        border: 1px solid #000000;
+        border-radius: 50%;
+        background: #ffffff;
+    }
+
+    .map-overlay label {
+        display: inline-block;
+        border-radius: 5px;
+        background-color: #ebebec;
+        position: relative;
+        left: 16px;
+        top: 3px;
+        padding: 2px 6px;
+    }
+
+    .map-overlay img {
+        margin-left: -10px;
+    }
+
+    /* #logo {
+        background-repeat: no-repeat;
+        cursor: pointer;
+        display: block;
+        height: 23px;
+        margin: 0 0 -4px -4px;
+        overflow: hidden;
+        width: 88px;
+    } */
+</style>
+<div id="map"></div>
+<div class="map-overlay">
+    <div class="slider-name">Opacity</div>
+    <input id="slider-opacity" type="range" min="0" max="1" step="0.1" value="1">
+    <label id="active-opacity">1.0</label>
+
+    <div class="slider-name" style="margin-top: 16px">Date</div>
+    <input id="slider-date" type="range">
+    <label id="active-date"></label>
+
+    <div class="slider-name" style="margin-top: 32px">Powered by</div>
+    <a href="https://myzeus.ai" target="_blank">
+        <img src="https://zeusai-public.s3.amazonaws.com/images/Zeus_Logo_White.png" alt="Zeus AI" width="120px">
+    </a>
+</div>    
+</div>
+<script>
+	// Replace token
+	mapboxgl.accessToken = 'pk.eyJ1IjoieW9uaW5hY2htYW55IiwiYSI6ImNqYWFocjVlajBocDcyd3RleW9sZWpkN3YifQ.9dk1UZWtf_NliyYFd0DALQ';
+    const map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/dark-v11',
+        projection: 'mercator',
+        zoom: 8.17,
+        center: [-71.076, 42.373],
+        hash: true
+    });
+
+    const rescale = encodeURIComponent("285,305");
+    const colormap = "coolwarm";
+    const variable = "surface_temperature";
+    
+    const dateEarliest = new Date(2024, 4, 28, 9);
+    var dateLatest = new Date();
+    dateLatest.setMinutes(0);
+    dateLatest.setSeconds(0);
+    dateLatest.setMilliseconds(0);
+    var dateCurrent = dateLatest;
+    const step = 1000 * 60 * 60;
+
+    document.getElementById("slider-date").min = dateEarliest.getTime();
+    document.getElementById("slider-date").max = dateLatest.getTime();
+    document.getElementById("slider-date").value = dateCurrent.getTime();
+    document.getElementById("slider-date").step = step;
+    document.getElementById("active-date").innerHTML = dateLatest.toLocaleString();
+
+    function getUrl(d) {
+        const zeroPad = (num) => String(num).padStart(2, '0');
+        var year = d.getUTCFullYear();
+        var month = zeroPad(d.getUTCMonth() + 1);
+        var date = zeroPad(d.getUTCDate());
+        var hour = zeroPad(d.getUTCHours());
+        var url = `s3://zeusai-data/prod/highres_lst/v0.2/${year}/${month}/${date}/zeus.lst.Boston.${year}${month}${date}_${hour}00.zarr/`;
+        return encodeURIComponent(url);
+    }
+
+    var url;
+
+    const range = (start, stop, step) =>
+        Array.from({ length: (stop - start) / step + 1 }, (_, i) => start + i * step);
+
+    map.on('load', () => {
+        const layers = map.getStyle().layers;
+        for (const layer of layers) {
+            if (layer.type === 'symbol') {
+                if ('text-color' in layer.paint) {
+                    map.setPaintProperty(layer.id, 'text-color', '#f2f2f2');
+                    map.setPaintProperty(layer.id, 'text-halo-width', 1);
+                    map.setPaintProperty(layer.id, 'text-halo-blur', 0);
+                }
+
+                if (layer.metadata["mapbox:featureComponent"] == 'point-of-interest-labels') {
+                    map.setLayoutProperty(layer.id, 'text-font', ['DIN Pro Bold', 'Arial Unicode MS Regular']);
+                }
+                if (layer.metadata["mapbox:featureComponent"] == 'road-network') {
+                    map.setLayoutProperty(layer.id, 'text-font', ['DIN Pro Medium', 'Arial Unicode MS Regular']);
+                }
+                if (layer.metadata["mapbox:featureComponent"] == 'place-labels') {
+                    map.setLayoutProperty(layer.id, 'text-font', ['DIN Pro Medium', 'Arial Unicode MS Regular']);
+                }
+            }
+        }
+
+        var times = range(dateEarliest.getTime(), dateLatest.getTime(), step)
+        for (const t of times) {
+            d = new Date(t);
+            url = getUrl(d);
+            
+            var l = d.toLocaleString();
+            tileUrl = `tiles/WebMercatorQuad/{z}/{x}/{y}@2x?colormap_name=${colormap}&url=${url}&variable=${variable}&rescale=${rescale}`;
+
+            map.addSource(l, {
+                'type': 'raster',
+                'tiles': [
+                    tileUrl
+                ],
+            });
+            map.addLayer(
+                {
+                    'id': l,
+                    'type': 'raster',
+                    'source': l,
+                    'minzoom': 0,
+                    'maxzoom': 22,
+                    'layout': {
+                        'visibility': 'none',
+                    },
+                    'paint': {
+                        'raster-opacity': 1,
+                    }
+                },
+                'tunnel-path-trail'
+            );
+        }
+
+        var layerCurrent = dateCurrent.toLocaleString();
+        map.setLayoutProperty(layerCurrent, 'visibility', 'visible');
+
+        document.getElementById("slider-date").addEventListener('input', function(e) {
+            var dateNew = new Date(Number(e.target.value));
+            var layerNew = dateNew.toLocaleString();
+
+            document.getElementById("active-date").innerHTML = layerNew;
+            map.setLayoutProperty(layerNew, 'visibility', 'visible');
+            map.setLayoutProperty(layerCurrent, 'visibility', 'none');
+            layerCurrent = layerNew;
+        })
+
+        document.getElementById("slider-opacity").addEventListener('input', function(e) {
+            var opacityNew = Number(e.target.value);
+            document.getElementById("active-opacity").innerHTML = opacityNew;
+            map.setPaintProperty(layerCurrent, 'raster-opacity', opacityNew);
+        })
+    });
+
+    map.addControl(
+        new MapboxGeocoder({
+            accessToken: mapboxgl.accessToken,
+            mapboxgl: mapboxgl,
+            collapsed: true,
+            marker: false,
+        })
+    );
+
+</script>
+
+</body>
+</html>
